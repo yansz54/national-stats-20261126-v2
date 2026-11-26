@@ -9,13 +9,14 @@
 // Leave vendor/makefun-frontend.ts as it is: the scorer requires
 // dossier.json to be byte for byte what its own copy writes.
 //
-// Before copying, it clears any stale output directory so a run can
-// never hand in files from an earlier entry, and it checks every
-// screenshot against the competition's own limits (3-4 files, each
-// at most 256 KiB, long side at most 1280, short side at least 360)
-// by reading the image dimensions itself — no image library. After
-// writing, it verifies the handover is complete and prints a summary,
-// so a silent partial run is impossible.
+// Before copying, it clears the stale contents of the output
+// directory so a run can never hand in files from an earlier entry,
+// and it checks every screenshot against the competition's own
+// limits (3-4 files, each at most 256 KiB, long side at most 1280,
+// short side at least 360) by reading the image dimensions itself
+// — no image library. After writing, it verifies the handover is
+// complete and prints a summary, so a silent partial run is
+// impossible.
 //
 // Serve it locally with `node serve.ts`, then open http://localhost:8080.
 // Outside the grader's container, MAKEFUN_OUTPUT_DIR stands in for /output:
@@ -84,9 +85,15 @@ function listFiles(dir: string, prefix = ''): string[] {
   return out;
 }
 
-// Clear stale output first, so nothing from an earlier run can leak in.
-if (existsSync(out)) rmSync(out, { recursive: true, force: true });
+// Clear the stale contents of the output directory first, so nothing
+// from an earlier run can leak into the handover. Remove the entries
+// inside it, never the directory itself: on the grader /output is a
+// mounted volume, and deleting a mount point fails with EBUSY
+// ("Device or resource busy"), which used to abort the whole run.
 mkdirSync(out, { recursive: true });
+for (const name of readdirSync(out)) {
+  rmSync(join(out, name), { recursive: true, force: true });
+}
 
 const shots = checkScreenshots(join(repoDir, 'screenshots'));
 cpSync(join(repoDir, 'app'), join(out, 'app'), { recursive: true });
@@ -96,6 +103,11 @@ cpSync(join(repoDir, 'screenshots'), join(out, 'screenshots'), { recursive: true
 // Verify the handover before building the dossier.
 if (!existsSync(join(out, 'app', 'index.html'))) {
   throw new Error('handover incomplete: /output/app/index.html is missing');
+}
+for (const shot of shots) {
+  if (!existsSync(join(out, 'screenshots', shot))) {
+    throw new Error(`handover incomplete: /output/screenshots/${shot} is missing`);
+  }
 }
 const appFiles = listFiles(join(out, 'app'));
 const dossierPath = join(out, 'dossier.json');
